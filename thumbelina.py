@@ -1,6 +1,9 @@
-import urllib
 import boto3
+import os
+import psycopg2
 import string
+import urllib
+
 from subprocess import Popen, PIPE
 
 s3 = boto3.client('s3')
@@ -54,6 +57,9 @@ def lambda_handler(event, context):
                       Metadata = response['Metadata'],
                       ContentType = contentType)
 
+        # Update the database to mark the image as processed
+        mark_processed(key)
+
         # Clean up source object
         s3.delete_object(Bucket = bucket,
                          Key = key)
@@ -81,3 +87,19 @@ def thumbnail_params():
     return ['-thumbnail', thumb_size + "^",
             '-gravity', 'center',
             '-extent', thumb_size]
+
+def mark_processed(key):
+    id = key.split('/')[-1] # ID is the part after the last '/'
+    conn = psycopg2.connect(conn_string())
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE tros_metadata SET processed = true WHERE id = '%s'", (id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def conn_string():
+    "dbname=" + os.getenv('DB_NAME')
+    + " user=" + os.getenv('DB_USER')
+    + " password=" + os.getenv('DB_PASSWORD')
+    + " host=" + os.getenv('DB_HOST')

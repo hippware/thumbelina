@@ -91,3 +91,6 @@ ENV/
 # Others
 *~
 *.zip
+
+# Symlink for build
+psycopg2
