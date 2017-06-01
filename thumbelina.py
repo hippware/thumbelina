@@ -17,7 +17,6 @@ def lambda_handler(event, context):
         targetBucket = string.replace(bucket, "-quarantine", "")
         body = response['Body'].read()
         contentType = response['ContentType']
-
         cmdHead = [
                     'convert',  # ImageMagick Convert
                     '-',        # Read original picture from StdIn
@@ -31,7 +30,6 @@ def lambda_handler(event, context):
         cmd = cmdHead + limit_size() + cmdTail
         p = Popen(cmd, stdout=PIPE, stdin=PIPE)
         cleanImage = p.communicate(input=body)[0]
-
         s3.put_object(Bucket = targetBucket,
                       Key = key,
                       Body = cleanImage,
@@ -48,7 +46,6 @@ def lambda_handler(event, context):
                       Body = thumbnailImage,
                       Metadata = response['Metadata'],
                       ContentType = contentType)
-
         # Copy over the original image (in case we want to reprocess it in the
         # future)
         s3.put_object(Bucket = targetBucket,
@@ -66,7 +63,7 @@ def lambda_handler(event, context):
 
     except Exception as e:
         print(e)
-        print('Error getting object {} from bucket {}. Make sure they exist and your bucket is in the same region as this function.'.format(key, bucket))
+        print('Error processing object {} from bucket {}.'.format(key, bucket))
         raise e
 
 def output_format(contentType):
@@ -93,13 +90,10 @@ def mark_processed(key):
     conn = psycopg2.connect(conn_string())
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE tros_metadata SET processed = true WHERE id = '%s'", (id))
+        "UPDATE tros_metadatas SET processed = true WHERE id = %s", [id])
     conn.commit()
     cursor.close()
     conn.close()
 
 def conn_string():
-    "dbname=" + os.getenv('DB_NAME')
-    + " user=" + os.getenv('DB_USER')
-    + " password=" + os.getenv('DB_PASSWORD')
-    + " host=" + os.getenv('DB_HOST')
+    return "dbname=" + os.getenv('DB_NAME') + " user=" + os.getenv('DB_USER') + " password=" + os.getenv('DB_PASSWORD') + " host=" + os.getenv('DB_HOST')
