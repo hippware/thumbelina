@@ -90,7 +90,7 @@ def mark_processed(key):
     conn = psycopg2.connect(conn_string())
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE tros_metadatas SET processed = true WHERE id = %s", [id])
+        "UPDATE tros_metadatas SET ready = true WHERE id = %s", [id])
     conn.commit()
     cursor.close()
     conn.close()
