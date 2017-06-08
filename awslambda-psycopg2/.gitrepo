@@ -1,0 +1,11 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/git-commands/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/jkehler/awslambda-psycopg2
+	branch = master
+	commit = 1f34d52b08ce3c148d706896222fe41bb9fa7f94
+	parent = 54e0f409e448aedc057c2b91b447bb9e6adcaf62
+	cmdver = 0.3.0

@@ -1,6 +1,9 @@
-import urllib
 import boto3
+import os
+import psycopg2
 import string
+import urllib
+
 from subprocess import Popen, PIPE
 
 s3 = boto3.client('s3')
@@ -14,7 +17,6 @@ def lambda_handler(event, context):
         targetBucket = string.replace(bucket, "-quarantine", "")
         body = response['Body'].read()
         contentType = response['ContentType']
-
         cmdHead = [
                     'convert',  # ImageMagick Convert
                     '-',        # Read original picture from StdIn
@@ -28,7 +30,6 @@ def lambda_handler(event, context):
         cmd = cmdHead + limit_size() + cmdTail
         p = Popen(cmd, stdout=PIPE, stdin=PIPE)
         cleanImage = p.communicate(input=body)[0]
-
         s3.put_object(Bucket = targetBucket,
                       Key = key,
                       Body = cleanImage,
@@ -45,7 +46,6 @@ def lambda_handler(event, context):
                       Body = thumbnailImage,
                       Metadata = response['Metadata'],
                       ContentType = contentType)
-
         # Copy over the original image (in case we want to reprocess it in the
         # future)
         s3.put_object(Bucket = targetBucket,
@@ -54,13 +54,16 @@ def lambda_handler(event, context):
                       Metadata = response['Metadata'],
                       ContentType = contentType)
 
+        # Update the database to mark the image as processed
+        mark_processed(key)
+
         # Clean up source object
         s3.delete_object(Bucket = bucket,
                          Key = key)
 
     except Exception as e:
         print(e)
-        print('Error getting object {} from bucket {}. Make sure they exist and your bucket is in the same region as this function.'.format(key, bucket))
+        print('Error processing object {} from bucket {}.'.format(key, bucket))
         raise e
 
 def output_format(contentType):
@@ -81,3 +84,16 @@ def thumbnail_params():
     return ['-thumbnail', thumb_size + "^",
             '-gravity', 'center',
             '-extent', thumb_size]
+
+def mark_processed(key):
+    id = key.split('/')[-1] # ID is the part after the last '/'
+    conn = psycopg2.connect(conn_string())
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE tros_metadatas SET ready = true WHERE id = %s", [id])
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def conn_string():
+    return "dbname=" + os.getenv('DB_NAME') + " user=" + os.getenv('DB_USER') + " password=" + os.getenv('DB_PASSWORD') + " host=" + os.getenv('DB_HOST')
