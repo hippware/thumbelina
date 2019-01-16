@@ -1,4 +1,5 @@
 import boto3
+import logging
 import os
 import psycopg2
 import string
@@ -7,12 +8,15 @@ import urllib
 from subprocess import Popen, PIPE
 
 s3 = boto3.client('s3')
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 def lambda_handler(event, context):
     bucket = event['Records'][0]['s3']['bucket']['name']
     key = urllib.unquote_plus(event['Records'][0]['s3']['object']['key'].encode('utf8'))
 
     try:
+        logger.info('Fetching image')
         response = s3.get_object(Bucket=bucket, Key=key)
         targetBucket = string.replace(bucket, "-quarantine", "")
         body = response['Body'].read()
@@ -27,9 +31,12 @@ def lambda_handler(event, context):
                   ]
 
         # Make full size clean image
+        logger.info('Creating clean image')
         cmd = cmdHead + limit_size() + cmdTail
         p = Popen(cmd, stdout=PIPE, stdin=PIPE)
         cleanImage = p.communicate(input=body)[0]
+
+        logger.info('Uploading clean image')
         s3.put_object(Bucket = targetBucket,
                       Key = key,
                       Body = cleanImage,
@@ -37,17 +44,21 @@ def lambda_handler(event, context):
                       ContentType = contentType)
 
         # Make thumbnail
+        logger.info('Creating thumbnail')
         cmd = cmdHead + thumbnail_params() + cmdTail
         p = Popen(cmd, stdout=PIPE, stdin=PIPE)
         thumbnailImage = p.communicate(input=body)[0]
 
+        logger.info('Uploading thumbnail')
         s3.put_object(Bucket = targetBucket,
                       Key = key + "-thumbnail",
                       Body = thumbnailImage,
                       Metadata = response['Metadata'],
                       ContentType = contentType)
+
         # Copy over the original image (in case we want to reprocess it in the
         # future)
+        logger.info('Uploading original')
         s3.put_object(Bucket = targetBucket,
                       Key = key + "-original",
                       Body = body,
@@ -58,12 +69,15 @@ def lambda_handler(event, context):
         mark_processed(key)
 
         # Clean up source object
+        logger.info('Deleting quarantine object')
         s3.delete_object(Bucket = bucket,
                          Key = key)
 
+        logger.info('Finished')
+
     except Exception as e:
-        print(e)
-        print('Error processing object {} from bucket {}.'.format(key, bucket))
+        logger.error(e)
+        logger.error('Error processing object {} from bucket {}.'.format(key, bucket))
         raise e
 
 def output_format(contentType):
@@ -87,13 +101,19 @@ def thumbnail_params():
 
 def mark_processed(key):
     id = key.split('/')[-1] # ID is the part after the last '/'
+    logger.info('Connecting to DB')
     conn = psycopg2.connect(conn_string())
+    logger.info('Connected to DB')
     cursor = conn.cursor()
+    logger.info('Executing UPDATE')
     cursor.execute(
         "UPDATE tros_metadatas SET ready = true WHERE id = %s", [id])
+    logger.info('COMMITing')
     conn.commit()
     cursor.close()
+    logger.info('Closing connection')
     conn.close()
+    logger.info('Finished DB update')
 
 def conn_string():
     return "dbname=" + os.getenv('DB_NAME') + " user=" + os.getenv('DB_USER') + " password=" + os.getenv('DB_PASSWORD') + " host=" + os.getenv('DB_HOST')
